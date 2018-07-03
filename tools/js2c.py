@@ -22,6 +22,8 @@ import os
 import re
 import subprocess
 import struct
+import codecs
+
 
 from common_py.system.filesystem import FileSystem as fs
 from common_py import path
@@ -199,8 +201,9 @@ def format_code(code, indent):
 def merge_snapshots(snapshot_infos, snapshot_tool):
     output_path = fs.join(path.SRC_ROOT, 'js','merged.modules')
     cmd = [snapshot_tool, "merge", "-o", output_path]
+    #cmd.extend(['-save-literals-list-format','literal.list'])
     cmd.extend([item['path'] for item in snapshot_infos])
-
+    print(cmd)
     ret = subprocess.call(cmd)
 
     if ret != 0:
@@ -231,7 +234,7 @@ def get_snapshot_contents(js_path, snapshot_tool):
             fwrapped.write("(function(exports, require, module, native) {\n")
 
         fwrapped.write(fmodule.read())
-
+        
         if module_name != "iotjs":
             fwrapped.write("});\n")
 
@@ -240,6 +243,30 @@ def get_snapshot_contents(js_path, snapshot_tool):
                            "-o", snapshot_path,
                            wrapped_path])
 
+    subprocess.call([snapshot_tool,
+                     "generate",
+                     "--save-literals-list-format",
+                     "lit.list",
+                     js_path])
+    
+    f = open(os.path.basename("/build/x86_64-linux/debug/literals.list"), "a+")
+    tempfile = open(os.path.basename("/build/x86_64-linux/debug/lit.list"), "r")
+    f.write(tempfile.read())
+    f.close()
+    
+    lines_seen = set()  # holds lines already seen
+    outfile = open(os.path.basename("/build/x86_64-linux/debug/literals1.list"), "w+")
+    infile = open(os.path.basename("/build/x86_64-linux/debug/literals.list"), "r")
+    for line in infile:
+        if line not in lines_seen:  # not a duplicate
+            line = line.split(" ", 1)
+            outfile.write(line[1])
+            lines_seen.add(line[1])
+    subprocess.call(["sort", os.path.basename("/build/x86_64-linux/debug/literals1.list"), "-o", os.path.basename("/build/x86_64-linux/debug/literals.list")])
+    outfile.close()
+    
+    fs.remove(os.path.basename("/build/x86_64-linux/debug/lit.list"))
+    fs.remove(os.path.basename("/build/x86_64-linux/debug/literals1.list"))
     fs.remove(wrapped_path)
     if ret != 0:
         msg = "Failed to dump %s: - %d" % (js_path, ret)
@@ -266,13 +293,6 @@ def js2c(buildtype, js_modules, snapshot_tool=None, verbose=False):
     is_debug_mode = (buildtype == "debug")
     no_snapshot = (snapshot_tool == None)
     magic_string_set = set()
-
-    str_const_regex = re.compile('^#define IOTJS_MAGIC_STRING_\w+\s+"(\w+)"$')
-    with open(fs.join(path.SRC_ROOT, 'iotjs_magic_strings.in'), 'r') as fin_h:
-        for line in fin_h:
-            result = str_const_regex.search(line)
-            if result:
-                magic_string_set.add(result.group(1))
 
     # generate the code for the modules
     with open(fs.join(path.SRC_ROOT, 'iotjs_js.h'), 'w') as fout_h, \
@@ -317,8 +337,13 @@ def js2c(buildtype, js_modules, snapshot_tool=None, verbose=False):
             modules_struct.append('  { NULL, NULL, 0 }')
         else:
             code = merge_snapshots(snapshot_infos, snapshot_tool)
+            p_literals = set()
+            with open(os.path.basename("/build/x86_64-linux/debug/literals.list"), 'r') as save_literals:
+                for line in save_literals:
+                    p_literals.add(line.replace('\n',''))
+            magic_string_set = p_literals
             code_string = format_code(code, 1)
-            magic_string_set |= parse_literals(code)
+            p_literals |= parse_literals(code)
 
             name = 'iotjs_js_modules'
             fout_h.write(MODULE_VARIABLES_H.format(NAME=name))

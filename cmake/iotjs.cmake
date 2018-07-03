@@ -370,7 +370,7 @@ add_custom_command(
        --modules '${IOTJS_JS_MODULES}'
        ${JS2C_SNAPSHOT_ARG}
   COMMAND ${CMAKE_COMMAND} -E remove
-            -f ${IOTJS_SOURCE_DIR}/iotjs_magic_strings.in
+          -f ${IOTJS_SOURCE_DIR}/iotjs_magic_strings.in
   DEPENDS ${ROOT_DIR}/tools/js2c.py
           jerry-snapshot
           ${IOTJS_JS_MODULE_SRC}
